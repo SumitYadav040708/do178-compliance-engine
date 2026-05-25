@@ -10,7 +10,7 @@ class SimilarityConfig:
     """Similarity score thresholds for keyword matching classification."""
     
     # Strong match: high semantic alignment (>= 0.85)
-    STRONG_THRESHOLD = 0.85
+    STRONG_THRESHOLD = 0.80
     
     # Weak match: partial semantic alignment (>= 0.55 and < 0.85)
     WEAK_THRESHOLD = 0.55

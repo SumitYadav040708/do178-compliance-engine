@@ -107,45 +107,43 @@ class OllamaExplainer:
         self,
         keyword: str,
         similarity_score: float,
+        connection_type: str,
         chunk: str,
         standard_chunk: str
     ) -> str:
         """
         Generate compliance explanation.
         
-        Strong alignment (>= 0.85): Returns deterministic text without LLM.
-        Weak alignment (< 0.85): Uses LLM with lightweight prompt.
-        
         Args:
             keyword: DO-178 keyword being analyzed
             similarity_score: Similarity score (0-1)
-            chunk: Retrieved text from CHECK SRD document
-            standard_chunk: Retrieved text from FAISS database (not used for weak alignment)
+            connection_type: Classification from config ("strong", "weak", "missing")
+            chunk: Retrieved text from document
+            standard_chunk: Retrieved text from FAISS database
             
         Returns:
             Generated explanation string
         """
-        # Strong alignment (>= 0.85): return fixed deterministic explanation
-        if similarity_score >= 0.85:
+        # Strong alignment: return fixed deterministic explanation
+        if connection_type == "strong":
             return f"Strong alignment detected for '{keyword}' with DO-178 requirements. Traceability and requirement linkage is evident."
         
-        # Weak alignment (< 0.85): use LLM with lightweight prompt
+        # Missing: brief explanation
+        if connection_type == "missing":
+            return f"No significant alignment for '{keyword}'. Limited relevance to DO-178 requirements."
+        
+        # Weak alignment: use LLM with lightweight prompt
         if not chunk or not chunk.strip():
-            return f"Weak alignment for '{keyword}'. Limited relevance to DO-178 requirements."
+            return f"Partial alignment for '{keyword}'. Some relevance to DO-178 requirements, but gaps exist."
         
         # Trim chunks to 300 characters
         chunk_trimmed = chunk[:300]
         standard_trimmed = standard_chunk[:300] if standard_chunk else ""
         
-        # Determine connection type
-        connection_type = classify_similarity(similarity_score)
-        
         prompt = self._build_weak_alignment_prompt(
             keyword=keyword,
             project_chunk=chunk_trimmed,
-            reference_chunk=standard_trimmed,
-            connection_type=connection_type,
-            similarity_score=similarity_score
+            connection_type=connection_type
         )
         
         try:
@@ -161,26 +159,24 @@ class OllamaExplainer:
         self,
         keyword: str,
         project_chunk: str,
-        reference_chunk: str,
-        connection_type: str,
-        similarity_score: float
+        connection_type: str
     ) -> str:
         """
-        Build prompt for weak alignment explanation.
+        Build prompt for alignment explanation.
         
         Args:
             keyword: DO-178 keyword
             project_chunk: Project document context
-            reference_chunk: DO-178 reference context (not currently used)
-            connection_type: "strong", "weak", or "missing" (not currently used)
-            similarity_score: Similarity score (0-1, not currently used)
+            connection_type: "weak" or "missing" (already filtered strong earlier)
             
         Returns:
             Formatted prompt for LLM
         """
         prompt = f"""You are a DO-178C compliance assistant.
 
-Explain briefly why the alignment is weak or partial.
+Connection Type: {connection_type}
+
+Explain briefly why the alignment is {connection_type}.
 
 Rules:
 - Do NOT assume full compliance
@@ -202,7 +198,7 @@ Keyword: {keyword}
 Text: {project_chunk}
 
 Output:
-Short explanation of partial compliance."""
+Short explanation of {connection_type} alignment."""
 
         return prompt
     

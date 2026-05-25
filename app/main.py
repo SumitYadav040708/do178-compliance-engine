@@ -24,7 +24,7 @@ FINAL DESIGN - Two Modes:
 
 KEYWORD OUTPUT STRUCTURE:
 - Each keyword becomes ONE ROW in CSV
-- Columns: filename, keyword, connection_type, similarity_score, matched_reference, llm_explanation
+- Columns: filename, keyword, connection_type, similarity_score, matched_reference, matched_page_number, llm_explanation
 - connection_type: strong (≥0.75), weak (≥0.55 and <0.75), missing (<0.55)
 
 CLASSIFICATION (configurable in app/config.py):
@@ -379,6 +379,7 @@ class DO178ComplianceAnalyzer:
                 "connection_type": "missing",
                 "similarity_score": None,
                 "matched_reference": "",
+                "matched_page_number": "",
                 "llm_explanation": ""
             }
         
@@ -420,6 +421,7 @@ class DO178ComplianceAnalyzer:
                 llm_explanation = self.explainer.generate_explanation(
                     keyword=keyword,
                     similarity_score=similarity,
+                    connection_type=connection_type,
                     chunk=matching_chunks[0]["chunk_text"],
                     standard_chunk=best_match["chunk_text"]
                 )
@@ -430,6 +432,7 @@ class DO178ComplianceAnalyzer:
                     "connection_type": connection_type,
                     "similarity_score": similarity,
                     "matched_reference": best_match.get("chunk_text", "")[:200],
+                    "matched_page_number": best_match.get("page_number", ""),
                     "llm_explanation": llm_explanation
                 }
         else:
@@ -442,6 +445,7 @@ class DO178ComplianceAnalyzer:
             "connection_type": "missing",
             "similarity_score": None,
             "matched_reference": "",
+            "matched_page_number": "",
             "llm_explanation": ""
         }
     

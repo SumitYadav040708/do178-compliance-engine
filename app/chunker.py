@@ -1,7 +1,6 @@
 import logging
 import re
-from typing import List, Dict
-from typing import Any as any
+from typing import List, Dict, Any as any
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +33,9 @@ class DocumentChunker:
         if not text or not text.strip():
             logger.warning(f"Empty text provided for chunking from {source_file}")
             return []
+        
+        # Clean text: remove PDF formatting noise before chunking
+        text = self._clean_text(text)
         
         # Process entire page text directly
         major_chunks = [text]
@@ -104,6 +106,28 @@ class DocumentChunker:
             chunks.extend(page_chunks)
 
         return chunks
+
+    def _clean_text(self, text: str) -> str:
+        """
+        Remove PDF formatting noise and normalize whitespace.
+        
+        Removes:
+        - Lines with 5+ consecutive dashes (formatting artifacts)
+        - Multiple consecutive whitespace characters
+        
+        Args:
+            text: Raw extracted text from PDF
+            
+        Returns:
+            Cleaned text ready for chunking
+        """
+        # Remove sequences of 5 or more dashes
+        text = re.sub(r'-{5,}', ' ', text)
+        
+        # Normalize whitespace: collapse multiple spaces/tabs/newlines into single space
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text.strip()
 
     def _split_by_sentences(self, text: str) -> List[str]:
         """Split text into chunks using robust PDF-aware sentence detection."""

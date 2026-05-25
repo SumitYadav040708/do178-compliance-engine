@@ -102,6 +102,7 @@ class ReportGenerator:
         - connection_type: strong / weak / missing
         - similarity_score: Float 0-1 (None if keyword-only)
         - matched_reference: Reference text snippet
+        - matched_page_number: Page number of matched reference
         - llm_explanation: Generated explanation from LLM
         
         Args:
@@ -122,6 +123,7 @@ class ReportGenerator:
                 "connection_type",
                 "similarity_score",
                 "matched_reference",
+                "matched_page_number",
                 "llm_explanation"
             ]
             

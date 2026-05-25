@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project-specific
+__MACOSX/
+.env
+.env.local
+.env.production
+
+# Uploads and cache
+uploads/
+.cache/
+*.cache
+temp/
+tmp/
+
+# Large files & indexes
+*.faiss
+*.pkl
+*.pickle
+*.model
+*.pt
+*.pth
+
+
+# Generated outputs
+*.csv
+
+
+# Logs
+*.log
+logs/
+compliance_analysis.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Node modules (if using any JS)
+node_modules/
+package-lock.json
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb

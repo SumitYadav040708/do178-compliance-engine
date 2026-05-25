@@ -1,0 +1,24 @@
+{
+  "do178_keywords": [
+    "traceability",
+    "requirement",
+    "verification",
+    "validation",
+    "compliance",
+    "safety-critical",
+    "aircraft",
+    "system requirement",
+    "software requirement",
+    "configuration management",
+    "quality assurance",
+    "testing",
+    "independence",
+    "robustness",
+    "error detection",
+    "documentation",
+    "design assurance",
+    "process assurance"
+  ],
+  "description": "DO-178 compliance keywords (READ-ONLY). User-managed only. Edit this file manually to add or modify keywords. System processes will read but never write to this file.",
+  "last_updated": "2024-05-18"
+}

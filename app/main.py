@@ -266,6 +266,9 @@ class DO178ComplianceAnalyzer:
             logger.warning("No keywords loaded from keywords.json")
             return {}
         
+        # Sort keywords for consistent ordering
+        keywords = sorted(keywords)
+        
         logger.info(f"Loaded {len(keywords)} keywords from keywords.json")
         
         # Find all PDFs in folder

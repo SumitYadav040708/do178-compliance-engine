@@ -363,6 +363,7 @@ class LocalExplainerFallback:
     def generate_explanation(
         keyword: str,
         similarity_score: float,
+        connection_type: str,
         chunk: str,
         standard_chunk: str
     ) -> str:
@@ -374,6 +375,7 @@ class LocalExplainerFallback:
         Args:
             keyword: DO-178 keyword being analyzed
             similarity_score: Similarity score (0-1)
+            connection_type: Classification from config ("strong", "weak", "missing")
             chunk: Project context
             standard_chunk: DO-178 reference context
             

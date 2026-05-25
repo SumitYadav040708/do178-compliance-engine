@@ -558,6 +558,10 @@ Examples:
     # Setup logging
     setup_logging(verbose=args.verbose)
     
+    # Ensure required directories exist
+    os.makedirs("outputs", exist_ok=True)
+    os.makedirs("indexes", exist_ok=True)
+    
     logger.info("=" * 70)
     logger.info("DO-178 COMPLIANCE ANALYSIS SYSTEM - REFACTORED")
     logger.info("=" * 70)

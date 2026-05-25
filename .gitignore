@@ -25,7 +25,10 @@ venv/
 ENV/
 env/
 .venv
-
+packages/
+models/
+indexes/
+outputs/
 # IDE
 .vscode/
 .idea/

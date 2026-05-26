@@ -95,9 +95,9 @@ class DO178ComplianceAnalyzer:
         # Initialize components
         self.pdf_parser = PDFParser()
         self.chunker = DocumentChunker(
-            min_chunk_size=self.config.get("min_chunk_size", 40),
-            max_chunk_size=self.config.get("max_chunk_size", 80),
-            overlap=self.config.get("overlap", 20)
+            min_chunk_size=self.config.get("min_chunk_size", 150),
+            max_chunk_size=self.config.get("max_chunk_size", 300),
+            overlap=self.config.get("overlap", 50)
         )
         self.embedder = Embedder(device=self.config.get("device", "cpu"))
         self.retriever = FAISSRetriever(

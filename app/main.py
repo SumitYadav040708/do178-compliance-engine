@@ -55,7 +55,7 @@ from .retriever import FAISSRetriever
 from .llm_explainer import OllamaExplainer, LocalExplainerFallback
 from .report_generator import ReportGenerator
 from .keyword_manager import KeywordManager
-from .config import classify_similarity, SimilarityConfig, LLMConfig
+from .config import classify_similarity, SimilarityConfig, LLMConfig, KeywordBoostConfig
 
 
 # Configure logging
@@ -95,9 +95,9 @@ class DO178ComplianceAnalyzer:
         # Initialize components
         self.pdf_parser = PDFParser()
         self.chunker = DocumentChunker(
-            min_chunk_size=self.config.get("min_chunk_size", 150),
-            max_chunk_size=self.config.get("max_chunk_size", 300),
-            overlap=self.config.get("overlap", 50)
+            min_chunk_size=self.config.get("min_chunk_size", 60),
+            max_chunk_size=self.config.get("max_chunk_size", 120),
+            overlap=self.config.get("overlap", 25)
         )
         self.embedder = Embedder(device=self.config.get("device", "cpu"))
         self.retriever = FAISSRetriever(
@@ -229,15 +229,18 @@ class DO178ComplianceAnalyzer:
         self,
         check_document_folder: str,
         similarity_threshold: float = 0.75,
-        top_k: int = 5
+        top_k: int = 3
     ) -> Dict:
         """
-        ANALYSIS MODE: Analyze all PDFs in VerifyDocumentCompliance folder using keyword mapping.
+        ANALYSIS MODE: Analyze all PDFs in VerifyDocumentCompliance folder using TOP-K retrieval.
+        
+        Uses TOP-K retrieval to collect multiple relevant chunks instead of single best match,
+        improving accuracy especially for larger documents where context is distributed.
         
         Args:
             check_document_folder: Path to VerifyDocumentCompliance folder
             similarity_threshold: Threshold for weak matches
-            top_k: Top K results to retrieve
+            top_k: Number of top results to retrieve per keyword (default 3)
             
         Returns:
             Analysis results with keyword-based structure
@@ -350,20 +353,31 @@ class DO178ComplianceAnalyzer:
         index_exists: bool
     ) -> Dict:
         """
-        Analyze a single keyword in a document (keyword-per-row output).
+        Analyze a single keyword in a document with TOP-K retrieval and keyword-aware boosting.
+        
+        TOP-K LOGIC:
+        - Retrieves top_k matches from FAISS for each document chunk containing keyword
+        - Applies keyword-aware boosting to each result:
+          * Hybrid score = (0.8 * embedding_similarity) + (0.2 * keyword_presence)
+          * keyword_presence = 1 if keyword in chunk text, else 0
+        - Combines all matches and computes:
+          - max_similarity: highest boosted score among all top_k results
+          - avg_similarity: average of all boosted scores
+        - Combines chunk texts with clear formatting
+        - Passes all chunks to LLM for better context
         
         Args:
             filename: Document filename
             keyword: Keyword to analyze
             doc_chunks: Document chunks
             similarity_threshold: Threshold for weak matches
-            top_k: Top K results
+            top_k: Number of top results to retrieve (default 3-4)
             index_exists: Whether FAISS index exists
             
         Returns:
             Result dict for this keyword (one row in output)
         """
-        logger.debug(f"Analyzing keyword '{keyword}' in {filename} (index_exists={index_exists})")
+        logger.debug(f"Analyzing keyword '{keyword}' in {filename} (index_exists={index_exists}, top_k={top_k})")
         
         # Find chunks containing this keyword
         matching_chunks = []
@@ -383,60 +397,86 @@ class DO178ComplianceAnalyzer:
                 "similarity_score": None,
                 "matched_reference": "",
                 "matched_page_number": "",
-                "llm_explanation": ""
+                "llm_explanation": "",
+                "max_similarity": None,
+                "avg_similarity": None
             }
         
-        # If index exists, find best match in standard
+        # If index exists, find best matches using TOP-K strategy
         if index_exists:
-            logger.info(f"    -> Using FAISS for semantic search")
-            best_match = None
-            best_score = 0
+            logger.info(f"    -> Using FAISS for TOP-K={top_k} semantic search")
+            all_top_matches = []
+            all_scores = []
             
-            # For each matching chunk, search for best match in standard
+            # For each matching chunk, search for top_k matches in standard
             for chunk_idx, chunk in enumerate(matching_chunks):
                 # Generate embedding for this chunk
                 embedding = self.embedder.embed_texts([chunk["chunk_text"]])[0]
                 
-                # Search in FAISS
+                # Search in FAISS for top_k results
                 results = self.retriever.search(embedding, k=top_k)
-                logger.info(f"      FAISS returned {len(results)} results")
+                logger.debug(f"      Chunk {chunk_idx+1}: FAISS returned {len(results)} results")
                 
                 if results:
-                    top_match = results[0]
-                    sim_score = top_match.get('similarity_score', 0)
-                    logger.info(f"      Top match sim={sim_score:.4f} (threshold={similarity_threshold:.2f})")
-                    
-                    if sim_score > best_score:
-                        best_score = sim_score
-                        best_match = top_match
+                    # Collect all results and apply keyword-aware boosting
+                    for result in results:
+                        embedding_sim = result.get('similarity_score', 0)
+                        
+                        # Apply keyword-aware boosting to this result
+                        boosted_score = self._apply_keyword_aware_boosting(
+                            result,
+                            keyword,
+                            embedding_sim
+                        )
+                        
+                        # Update the result with boosted score
+                        result['original_similarity_score'] = embedding_sim
+                        result['similarity_score'] = boosted_score
+                        
+                        all_scores.append(boosted_score)
+                        all_top_matches.append(result)
             
-            logger.info(f"    Best match found: {best_score:.4f}" if best_match else "    No match found")
+            logger.info(f"    Total top_k matches collected: {len(all_top_matches)}")
             
-            if best_match:
-                similarity = best_match["similarity_score"]
+            if all_top_matches and all_scores:
+                # Calculate similarity metrics (using boosted scores)
+                max_similarity = max(all_scores)
+                avg_similarity = sum(all_scores) / len(all_scores)
                 
-                # Classify using config-driven thresholds
-                connection_type = classify_similarity(similarity)
+                logger.info(
+                    f"    Similarity stats (with keyword-aware boosting): "
+                    f"max={max_similarity:.4f}, avg={avg_similarity:.4f}"
+                )
                 
-                logger.info(f"    Classification: {connection_type} (score={similarity:.4f})")
+                # Classify using max_similarity as primary score
+                connection_type = classify_similarity(max_similarity)
+                logger.info(f"    Classification: {connection_type} (max_score={max_similarity:.4f})")
                 
-                # Generate explanation (deterministic for strong, LLM for weak)
+                # Combine all top_k chunks into formatted reference
+                combined_reference = self._format_combined_chunks(all_top_matches)
+                
+                # Get primary page number (from highest similarity match)
+                primary_page = all_top_matches[0].get("page_number", "")
+                
+                # Generate explanation with all chunks
                 llm_explanation = self.explainer.generate_explanation(
                     keyword=keyword,
-                    similarity_score=similarity,
+                    similarity_score=max_similarity,
                     connection_type=connection_type,
                     chunk=matching_chunks[0]["chunk_text"],
-                    standard_chunk=best_match["chunk_text"]
+                    standard_chunks=all_top_matches  # Pass all top_k chunks
                 )
                 
                 return {
                     "filename": filename,
                     "keyword": keyword,
                     "connection_type": connection_type,
-                    "similarity_score": similarity,
-                    "matched_reference": best_match.get("chunk_text", "")[:200],
-                    "matched_page_number": best_match.get("page_number", ""),
-                    "llm_explanation": llm_explanation
+                    "similarity_score": max_similarity,
+                    "matched_reference": combined_reference,
+                    "matched_page_number": primary_page,
+                    "llm_explanation": llm_explanation,
+                    "max_similarity": max_similarity,
+                    "avg_similarity": avg_similarity
                 }
         else:
             logger.info(f"    -> Index does not exist, no FAISS search")
@@ -449,8 +489,89 @@ class DO178ComplianceAnalyzer:
             "similarity_score": None,
             "matched_reference": "",
             "matched_page_number": "",
-            "llm_explanation": ""
+            "llm_explanation": "",
+            "max_similarity": None,
+            "avg_similarity": None
         }
+    
+    def _format_combined_chunks(self, chunks: List[Dict]) -> str:
+        """
+        Format multiple chunks with clear formatting: [Match N]: <text>.
+        
+        Args:
+            chunks: List of chunk dicts with 'chunk_text'
+            
+        Returns:
+            Formatted combined string (limited to ~500 chars)
+        """
+        if not chunks:
+            return ""
+        
+        formatted_chunks = []
+        max_total_length = 500
+        current_length = 0
+        
+        for i, chunk_data in enumerate(chunks, 1):
+            # Extract chunk text
+            chunk_text = chunk_data.get("chunk_text", "")
+            if not chunk_text:
+                continue
+            
+            # Trim each chunk to reasonable preview size (~100 chars per match)
+            chunk_preview = chunk_text.strip()[:100]
+            
+            # Format: "[Match N]: <text>"
+            formatted = f"[Match {i}]: {chunk_preview}"
+            
+            # Check length
+            new_length = current_length + len(formatted) + 2  # +2 for newline
+            if new_length > max_total_length and formatted_chunks:
+                logger.debug(f"Combined chunks length exceeded, stopping at {i-1} matches")
+                break
+            
+            formatted_chunks.append(formatted)
+            current_length = new_length
+        
+        combined = "\n".join(formatted_chunks)
+        logger.debug(f"Combined {len(formatted_chunks)} chunks into {len(combined)} characters")
+        return combined
+    
+    def _apply_keyword_aware_boosting(
+        self,
+        chunk: Dict,
+        keyword: str,
+        embedding_similarity: float
+    ) -> float:
+        """
+        Apply keyword-aware boosting to embedding similarity score.
+        
+        Uses hybrid scoring: final_score = (0.8 * embedding_sim) + (0.2 * keyword_match)
+        where keyword_match = 1 if keyword is present, 0 otherwise.
+        
+        Args:
+            chunk: Chunk dict with 'chunk_text'
+            keyword: Keyword to check for (case-insensitive)
+            embedding_similarity: Original embedding similarity score (0-1)
+            
+        Returns:
+            Hybrid score combining embedding similarity and keyword presence (0-1)
+        """
+        # Check if keyword is present in chunk (case-insensitive)
+        chunk_text = chunk.get("chunk_text", "").lower()
+        keyword_lower = keyword.lower()
+        
+        # Binary keyword match score
+        keyword_match = 1 if keyword_lower in chunk_text else 0
+        
+        # Calculate hybrid score
+        hybrid_score = KeywordBoostConfig.calculate_hybrid_score(embedding_similarity, keyword_match)
+        
+        logger.debug(
+            f"Keyword '{keyword}': embedding={embedding_similarity:.4f}, "
+            f"keyword_present={bool(keyword_match)}, hybrid={hybrid_score:.4f}"
+        )
+        
+        return hybrid_score
     
     # ==================== REPORT GENERATION ====================
     

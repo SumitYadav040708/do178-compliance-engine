@@ -109,17 +109,19 @@ class OllamaExplainer:
         similarity_score: float,
         connection_type: str,
         chunk: str,
-        standard_chunk: str
+        standard_chunks: Any = None
     ) -> str:
         """
-        Generate compliance explanation.
+        Generate compliance explanation with support for multiple reference chunks.
         
         Args:
             keyword: DO-178 keyword being analyzed
-            similarity_score: Similarity score (0-1)
+            similarity_score: Similarity score (0-1) or max_similarity if multiple chunks
             connection_type: Classification from config ("strong", "weak", "missing")
             chunk: Retrieved text from document
-            standard_chunk: Retrieved text from FAISS database
+            standard_chunks: Single chunk string OR list of chunk dicts with similarity_score.
+                            If dict list, combines all chunks and passes to LLM.
+                            Backward compatible: accepts string for single chunk.
             
         Returns:
             Generated explanation string
@@ -136,13 +138,13 @@ class OllamaExplainer:
         if not chunk or not chunk.strip():
             return f"Partial alignment for '{keyword}'. Some relevance to DO-178 requirements, but gaps exist."
         
-        # Trim chunks to 300 characters
-        chunk_trimmed = chunk[:300]
-        standard_trimmed = standard_chunk[:300] if standard_chunk else ""
+        # Combine multiple chunks if provided as list
+        combined_reference = self._combine_reference_chunks(standard_chunks)
         
         prompt = self._build_weak_alignment_prompt(
             keyword=keyword,
-            project_chunk=chunk_trimmed,
+            project_chunk=chunk[:300],
+            reference_evidence=combined_reference,
             connection_type=connection_type
         )
         
@@ -155,23 +157,83 @@ class OllamaExplainer:
             logger.debug(f"LLM failed for '{keyword}': {str(e)}")
             return f"Weak alignment for '{keyword}'. Limited relevance to DO-178 requirements."
     
+    def _combine_reference_chunks(self, standard_chunks: Any) -> str:
+        """
+        Combine multiple reference chunks into a single formatted string.
+        
+        Args:
+            standard_chunks: Can be:
+                - None: return empty string
+                - str: return as-is (backward compatibility)
+                - list: list of chunk dicts with 'chunk_text' and optionally 'similarity_score'
+                
+        Returns:
+            Formatted combined chunks string (trimmed to ~600 chars total)
+        """
+        if not standard_chunks:
+            return ""
+        
+        # Backward compatibility: single string
+        if isinstance(standard_chunks, str):
+            return standard_chunks[:300]
+        
+        # Multiple chunks as list
+        if isinstance(standard_chunks, list) and len(standard_chunks) > 0:
+            combined = []
+            max_total_length = 600
+            current_length = 0
+            
+            for i, chunk_data in enumerate(standard_chunks, 1):
+                # Extract chunk text (handle dict or string format)
+                if isinstance(chunk_data, dict):
+                    chunk_text = chunk_data.get("chunk_text", "")
+                    sim_score = chunk_data.get("similarity_score", 0)
+                else:
+                    chunk_text = str(chunk_data)
+                    sim_score = 0
+                
+                # Trim chunk to reasonable size
+                chunk_preview = chunk_text[:150]
+                
+                # Format: "[Match N]: <text>"
+                formatted = f"[Match {i}]: {chunk_preview}"
+                
+                # Check if adding this chunk exceeds limit
+                new_length = current_length + len(formatted) + 2  # +2 for newline
+                if new_length > max_total_length and combined:
+                    break
+                
+                combined.append(formatted)
+                current_length = new_length
+            
+            return "\n".join(combined) if combined else ""
+        
+        return ""
+    
     def _build_weak_alignment_prompt(
         self,
         keyword: str,
         project_chunk: str,
-        connection_type: str
+        connection_type: str,
+        reference_evidence: str = ""
     ) -> str:
         """
-        Build prompt for alignment explanation.
+        Build prompt for alignment explanation with support for multiple reference chunks.
         
         Args:
             keyword: DO-178 keyword
             project_chunk: Project document context
             connection_type: "weak" or "missing" (already filtered strong earlier)
+            reference_evidence: Combined reference chunks (can be multi-match format)
             
         Returns:
             Formatted prompt for LLM
         """
+        # Build reference section if provided
+        reference_section = ""
+        if reference_evidence:
+            reference_section = f"\nReference Evidence (from standard):\n{reference_evidence}\n"
+        
         prompt = f"""You are a DO-178C compliance assistant.
 
 Connection Type: {connection_type}
@@ -195,8 +257,7 @@ Instructions:
 
 Input:
 Keyword: {keyword}
-Text: {project_chunk}
-
+Project Text: {project_chunk}{reference_section}
 Output:
 Short explanation of {connection_type} alignment."""
 
@@ -308,7 +369,7 @@ Short explanation of {connection_type} alignment."""
         Generate explanations for multiple matches (DEPRECATED - use generate_explanation directly).
         
         Args:
-            matches: List of match dicts with keyword, similarity_score, chunk, standard_chunk
+            matches: List of match dicts with keyword, similarity_score, chunk, standard_chunks, connection_type
             max_tokens: Max tokens per explanation
             
         Returns:
@@ -319,15 +380,17 @@ Short explanation of {connection_type} alignment."""
         for i, match in enumerate(matches):
             keyword = match.get("keyword", "")
             chunk = match.get("chunk", "")
-            standard_chunk = match.get("standard_chunk", "")
+            standard_chunks = match.get("standard_chunks") or match.get("standard_chunk")
+            connection_type = match.get("connection_type", "weak")
             similarity = match.get("similarity_score", 0.0)
             
             try:
                 explanation = self.generate_explanation(
                     keyword=keyword,
                     similarity_score=similarity,
+                    connection_type=connection_type,
                     chunk=chunk,
-                    standard_chunk=standard_chunk
+                    standard_chunks=standard_chunks
                 )
                 match["explanation"] = explanation
             except Exception as e:
@@ -365,7 +428,7 @@ class LocalExplainerFallback:
         similarity_score: float,
         connection_type: str,
         chunk: str,
-        standard_chunk: str
+        standard_chunks: Any = None
     ) -> str:
         """
         Generate rule-based explanation with DO-178 guidance.
@@ -374,10 +437,11 @@ class LocalExplainerFallback:
         
         Args:
             keyword: DO-178 keyword being analyzed
-            similarity_score: Similarity score (0-1)
+            similarity_score: Similarity score (0-1) or max_similarity if multiple chunks
             connection_type: Classification from config ("strong", "weak", "missing")
             chunk: Project context
-            standard_chunk: DO-178 reference context
+            standard_chunks: Single chunk string OR list of chunk dicts.
+                            Backward compatible: accepts string for single chunk.
             
         Returns:
             Generated explanation string

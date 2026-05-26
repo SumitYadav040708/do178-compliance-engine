@@ -100,10 +100,12 @@ class ReportGenerator:
         - filename: Document filename
         - keyword: The DO-178 keyword
         - connection_type: strong / weak / missing
-        - similarity_score: Float 0-1 (None if keyword-only)
-        - matched_reference: Reference text snippet
-        - matched_page_number: Page number of matched reference
+        - similarity_score: Float 0-1 (max_similarity from top_k results)
+        - matched_reference: Combined reference text snippets from top_k matches
+        - matched_page_number: Page number of primary (highest score) match
         - llm_explanation: Generated explanation from LLM
+        - max_similarity: Maximum similarity score among top_k results (NEW)
+        - avg_similarity: Average similarity score among top_k results (NEW)
         
         Args:
             connections: Connection records
@@ -116,7 +118,7 @@ class ReportGenerator:
         csv_filename = f"{self.output_dir}/{output_prefix}_connections_{timestamp}.csv"
         
         try:
-            # Define expected columns
+            # Define expected columns (now includes max/avg similarity)
             columns = [
                 "filename",
                 "keyword",
@@ -124,6 +126,8 @@ class ReportGenerator:
                 "similarity_score",
                 "matched_reference",
                 "matched_page_number",
+                "max_similarity",
+                "avg_similarity",
                 "llm_explanation"
             ]
             

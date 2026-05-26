@@ -48,3 +48,33 @@ class LLMConfig:
     
     # Maximum tokens for explanation
     MAX_EXPLANATION_TOKENS = 100
+
+
+class KeywordBoostConfig:
+    """Configuration for keyword-aware scoring boost."""
+    
+    # Hybrid scoring: final_score = (embedding_weight * embedding_sim) + (keyword_weight * keyword_match)
+    # embedding_weight: Weight for semantic embedding similarity
+    # keyword_weight: Weight for explicit keyword presence (binary: 0 or 1)
+    EMBEDDING_WEIGHT = 0.8  # 80% weight on embedding similarity
+    KEYWORD_WEIGHT = 0.2    # 20% weight on keyword presence
+    
+    # Ensure weights sum to 1.0
+    _WEIGHT_SUM = EMBEDDING_WEIGHT + KEYWORD_WEIGHT
+    assert _WEIGHT_SUM == 1.0, f"Weights must sum to 1.0, got {_WEIGHT_SUM}"
+    
+    @staticmethod
+    def calculate_hybrid_score(embedding_similarity: float, keyword_match: int) -> float:
+        """
+        Calculate hybrid score combining embedding similarity and keyword presence.
+        
+        Args:
+            embedding_similarity: Embedding-based similarity score (0-1)
+            keyword_match: Binary keyword match (1 if present, 0 if not)
+            
+        Returns:
+            Hybrid score (0-1) clipped to valid range
+        """
+        hybrid = (KeywordBoostConfig.EMBEDDING_WEIGHT * embedding_similarity +
+                  KeywordBoostConfig.KEYWORD_WEIGHT * keyword_match)
+        return min(max(hybrid, 0.0), 1.0)  # Clip to [0, 1]

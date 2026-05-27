@@ -455,8 +455,8 @@ class DO178ComplianceAnalyzer:
                 # Combine all top_k chunks into formatted reference
                 combined_reference = self._format_combined_chunks(all_top_matches)
                 
-                # Get primary page number (from highest similarity match)
-                primary_page = all_top_matches[0].get("page_number", "")
+                # Extract all page numbers from top_k matches (deduplicated, sorted)
+                all_page_numbers = self._extract_page_numbers(all_top_matches)
                 
                 # Generate explanation with all chunks
                 llm_explanation = self.explainer.generate_explanation(
@@ -473,7 +473,7 @@ class DO178ComplianceAnalyzer:
                     "connection_type": connection_type,
                     "similarity_score": max_similarity,
                     "matched_reference": combined_reference,
-                    "matched_page_number": primary_page,
+                    "matched_page_number": all_page_numbers,
                     "llm_explanation": llm_explanation,
                     "max_similarity": max_similarity,
                     "avg_similarity": avg_similarity
@@ -493,6 +493,51 @@ class DO178ComplianceAnalyzer:
             "max_similarity": None,
             "avg_similarity": None
         }
+    
+    def _extract_page_numbers(self, chunks: List[Dict]) -> str:
+        """
+        Extract and combine page numbers from all retrieved chunks.
+        
+        Args:
+            chunks: List of chunk dicts with 'page_number' key
+            
+        Returns:
+            Comma-separated string of unique, sorted page numbers
+            Example: "1, 2, 3"
+            
+        Edge cases:
+            - Single match: returns single page number
+            - No matches: returns empty string
+            - Multiple chunks from same page: deduplicates
+        """
+        if not chunks:
+            return ""
+        
+        # Extract page numbers from all chunks
+        page_numbers = []
+        for chunk in chunks:
+            page_num = chunk.get("page_number")
+            if page_num is not None and page_num != "":
+                # Convert to int for sorting (if possible)
+                try:
+                    page_numbers.append(int(page_num))
+                except (ValueError, TypeError):
+                    # Keep as string if not convertible
+                    page_numbers.append(str(page_num))
+        
+        if not page_numbers:
+            return ""
+        
+        # Deduplicate and sort
+        unique_pages = sorted(set(page_numbers))
+        
+        # Format as comma-separated string
+        result = ", ".join(str(p) for p in unique_pages)
+        
+        logger.debug(
+            f"Extracted page numbers from {len(chunks)} chunks: {result}"
+        )
+        return result
     
     def _format_combined_chunks(self, chunks: List[Dict]) -> str:
         """

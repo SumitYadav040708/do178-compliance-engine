@@ -247,7 +247,7 @@ python main.py --mode analyze --check VerifyDocumentCompliance --verbose
 | connection_type | strong / weak / missing |
 | similarity_score | max_similarity (primary scoring metric) |
 | matched_reference | Combined top-K chunks formatted as [Match 1]: ..., [Match 2]: ... |
-| matched_page_number | Page number of primary match |
+| matched_page_number | All page numbers from top-K matches (deduplicated, sorted), comma-separated |
 | max_similarity | Maximum score from top-K results (0-1) |
 | avg_similarity | Average score from top-K results (0-1) |
 | llm_explanation | LLM-generated explanation (only for weak matches) |
@@ -495,6 +495,26 @@ EMBEDDING_WEIGHT = 0.95
 KEYWORD_WEIGHT = 0.05
 ```
 
+### Page Number Extraction (All Matches)
+
+Page numbers are extracted from all top-K retrieved matches:
+
+```python
+# In _analyze_keyword_in_document():
+all_page_numbers = self._extract_page_numbers(all_top_matches)
+```
+
+**Behavior:**
+- Extracts page_number from each top-K chunk metadata
+- Deduplicates (if multiple chunks from same page)
+- Sorts in ascending numerical order
+- Formats as comma-separated string: `"1, 2, 3"`
+
+**Examples:**
+- Top-3 matches from pages [5, 5, 10] → Output: `"5, 10"`
+- Single match from page 3 → Output: `"3"`
+- No matches → Output: `""`
+
 ### Programmatic Usage
 
 ```python
@@ -559,7 +579,8 @@ The system automatically detects and uses GPU when available.
 
 ### Report Generation
 - **Format**: CSV with keyword-per-row structure
-- **Columns**: filename, keyword, connection_type, similarity_score, matched_reference, matched_page_number, max_similarity, avg_similarity, llm_explanation
+- **Columns**: filename, keyword, connection_type, similarity_score, matched_reference, matched_page_number (all pages from top-K), max_similarity, avg_similarity, llm_explanation
+- **Page Numbers**: Extracted from all top-K matches, deduplicated, sorted ascending (e.g., "1, 2, 3")
 - **Sorting**: By filename, then connection_type (strong→weak→missing)
 
 ## 🐛 Troubleshooting

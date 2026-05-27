@@ -357,8 +357,7 @@ self.model_name = "phi"  # Lightweight, ~3B params
 
 Alternatives:
 - `mistral:7b` - Better quality, more capable
-- `neural-chat:7b` - Specialized for Q&A
-- `qwen2.5:3b` - Fast and compact
+
 
 ## 🌐 REST API
 

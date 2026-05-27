@@ -352,7 +352,7 @@ Alternatives:
 Edit `app/llm_explainer.py`:
 
 ```python
-self.model_name = "phi"  # Lightweight, ~7B params
+self.model_name = "phi"  # Lightweight, ~3B params
 ```
 
 Alternatives:
